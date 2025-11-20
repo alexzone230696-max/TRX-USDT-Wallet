@@ -2,10 +2,12 @@
   <div class="content">
     <van-row class="welcome">
       <div class="nickname">{{ firstName }}</div>
+
       <div class="settings" @click="onSettings">
         <van-icon name="setting-o" size="24" />
       </div>
     </van-row>
+
     <div class="child">
       <Wallet />
     </div>
@@ -14,21 +16,28 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { backButton } from '@telegram-apps/sdk'
 import Wallet from '@/components/home/Wallet.vue'
 import router from '../../router'
 
-const firstName = ref('')
+const firstName = ref('User')
 
+// Загрузка имени из localStorage (если есть)
 onMounted(() => {
-  if (backButton.isMounted()) {
-    backButton.hide()
-  }
+  const saved = localStorage.getItem('user')
 
-  const user = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null
-  firstName.value = user.firstName
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved)
+      if (parsed.firstName) {
+        firstName.value = parsed.firstName
+      }
+    } catch (e) {
+      console.error('localStorage user parse error:', e)
+    }
+  }
 })
 
+// Переход в настройки
 const onSettings = () => {
   router.push({ name: 'Settings' })
 }
@@ -48,6 +57,9 @@ const onSettings = () => {
     .nickname {
       flex-grow: 1;
       font-weight: bolder;
+    }
+    .settings {
+      cursor: pointer;
     }
   }
 
