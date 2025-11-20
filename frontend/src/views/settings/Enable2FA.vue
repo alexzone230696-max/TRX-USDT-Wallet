@@ -13,8 +13,8 @@
       <canvas class="qrcode" ref="canvas" />
     </div>
     <div class="desc">您也可以复制下方地址并添加到验证器</div>
-    <div class="address_wrapper" v-if="wallet" @click="copyAddress">
-      <div class="address">{{ wallet.address }}</div>
+    <div class="address_wrapper" v-if="otpauthUrl" @click="copyAddress">
+      <div class="address">{{ otpauthUrl }}</div>
       <div class="copy">
         <van-icon name="notes-o" size="1.5rem" color="#c0c0c0" />
       </div>
@@ -41,9 +41,8 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { backButton } from '@telegram-apps/sdk'
 import copy from 'copy-to-clipboard'
 import { showToast } from 'vant'
 import QRCode from 'qrcode'
@@ -53,105 +52,70 @@ import Password from '@/components/wallet/Password.vue'
 import request from '@/common/request'
 
 const router = useRouter()
-const canvas = ref('null')
+const canvas = ref(null)
 const otpauthUrl = ref(null)
 const showPassword = ref(false)
 const loading = ref(false)
 
-const backListener = () => {
-  router.back()
-}
-
+// ---------------------------
+// Монтирование и генерация QR
 onMounted(() => {
-  if (backButton.isMounted()) {
-    backButton.onClick(backListener)
-  }
-  // 读取钱包信息
-  otpauthUrl.value = localStorage.getItem('otpauthUrl') ? localStorage.getItem('otpauthUrl') : null
-  QRCode.toCanvas(
-    canvas.value,
-    otpauthUrl.value,
-    {
-      margin: 0,
-      width: 150,
-      color: {
-        dark: '#000',
-        light: '#eff2f5'
+  otpauthUrl.value = localStorage.getItem('otpauthUrl') || ''
+  if (canvas.value && otpauthUrl.value) {
+    QRCode.toCanvas(
+      canvas.value,
+      otpauthUrl.value,
+      {
+        margin: 0,
+        width: 150,
+        color: { dark: '#000', light: '#eff2f5' }
+      },
+      (error) => {
+        if (error) console.error(error)
       }
-    },
-    function (error) {
-      if (error) console.error(error)
-      console.log('success!')
-    }
-  )
-})
-
-onUnmounted(() => {
-  if (backButton.isMounted()) {
-    backButton.offClick(backListener)
+    )
   }
 })
 
-const copyAddress = async () => {
+// ---------------------------
+// Копирование адреса
+const copyAddress = () => {
+  if (!otpauthUrl.value) return
   try {
-    copy(otpauthUrl.value.address)
-    showToast({
-      message: '地址已复制到剪贴板',
-      position: 'bottom'
-    })
+    copy(otpauthUrl.value)
+    showToast({ message: '地址已复制到剪贴板', position: 'bottom' })
   } catch (error) {
-    console.log(error)
-    showToast({
-      message: '地址复制失败',
-      position: 'bottom'
-    })
+    console.error(error)
+    showToast({ message: '地址复制失败', position: 'bottom' })
   }
 }
 
+// ---------------------------
+// Привязка 2FA
 const onBind = async (code) => {
   try {
     showPassword.value = false
-    let res = await request('/api/user/enable_2fa', 'POST', {
-      code
-    })
-    if (res.code && res.type == 'login') {
-      loading.value = false
-      return router.replace({ name: 'Login' })
-    } else if (!res.code) {
-      loading.value = false
-      showToast({
-        message: '成功开启双因素验证',
-        position: 'bottom'
-      })
+    loading.value = true
+    let res = await request('/api/user/enable_2fa', 'POST', { code })
+    loading.value = false
+
+    if (res.code && res.type === 'login') return router.replace({ name: 'Login' })
+
+    if (!res.code) {
+      showToast({ message: '成功开启双因素验证', position: 'bottom' })
       localStorage.setItem('enable2fa', true)
       return router.back()
-    } else {
-      if (res.type == '2fa_secret') {
-        showToast({
-          message: '验证码错误输入错误',
-          position: 'bottom'
-        })
-        return router.back()
-      } else if (res.type == '2fa_bind') {
-        // 已经开启过了
-        showToast({
-          message: '成功开启双因素验证',
-          position: 'bottom'
-        })
-        return router.back()
-      }
-      showToast({
-        message: res.message,
-        position: 'bottom'
-      })
     }
-    loading.value = false
+
+    if (res.type === '2fa_secret' || res.type === '2fa_bind') {
+      showToast({ message: '验证码错误或已开启', position: 'bottom' })
+      return router.back()
+    }
+
+    showToast({ message: res.message, position: 'bottom' })
   } catch (error) {
     loading.value = false
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    showToast({ message: error.message, position: 'bottom' })
   }
 }
 </script>
@@ -191,7 +155,7 @@ const onBind = async (code) => {
     width: 80%;
     padding: 10px;
     border-radius: 5px;
-    border: 1px solid #c0c0c0; /* 外边框 */
+    border: 1px solid #c0c0c0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -200,11 +164,11 @@ const onBind = async (code) => {
       width: 80%;
       color: #bbbbbb;
       font-size: 14px;
-      word-wrap: break-word; /* 适用于旧浏览器 */
-      overflow-wrap: break-word; /* 现代浏览器推荐 */
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
     .copy {
-      padding: 0 0 0 10px;
+      padding-left: 10px;
     }
   }
 
