@@ -61,7 +61,6 @@
                     ? '从: '
                     : '到: '
                 }}
-
                 {{
                   transaction.raw_data.contract[0].parameter.value.to_address === wallet.trxAddr
                     ? truncate(transaction.raw_data.contract[0].parameter.value.owner_address_trc)
@@ -81,8 +80,7 @@
 </template>
 
 <script lang="js" setup>
-import { onMounted, onUnmounted, ref } from 'vue'
-import { backButton, openLink } from '@telegram-apps/sdk'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '@/common/request'
 import { showToast } from 'vant'
@@ -94,46 +92,28 @@ const router = useRouter()
 const wallet = ref(null)
 const transactions = ref([])
 const loading = ref(false)
-const refreshing = ref(false)
 const finished = ref(false)
-const tronWeb = new TronWeb({
-  fullHost: 'https://api.trongrid.io'
-})
-
-const backListener = () => {
-  router.back()
-}
+const tronWeb = new TronWeb({ fullHost: 'https://api.trongrid.io' })
 
 function truncate(str) {
-  if (str.length > 30) {
-    return str.slice(0, 10) + '...' + str.slice(-10)
-  }
+  if (str.length > 30) return str.slice(0, 10) + '...' + str.slice(-10)
   return str
 }
 
 onMounted(() => {
-  // 显示后退按钮
-  if (backButton.isMounted()) {
-    backButton.show()
-    backButton.onClick(backListener)
-  }
-  // 读取钱包信息
   wallet.value = localStorage.getItem('wallet') ? JSON.parse(localStorage.getItem('wallet')) : null
-})
-
-onUnmounted(() => {
-  if (backButton.isMounted()) {
-    backButton.offClick(backListener)
-  }
+  loadTron()
+  onLoad()
 })
 
 let page = 1
 let limit = 20
 let fingerprint = undefined
+
 const onRefresh = () => {
   page = 1
-  refreshing.value = true
   loading.value = false
+  finished.value = false
   fingerprint = undefined
   loadTron()
   onLoad()
@@ -142,213 +122,59 @@ const onRefresh = () => {
 const onLoad = async () => {
   try {
     loading.value = true
-    let res = await request('/api/wallet/tron/trx/history', 'POST', {
+    const res = await request('/api/wallet/tron/trx/history', 'POST', {
       address: wallet.value.address,
       fingerprint,
       page,
       limit
     })
-    refreshing.value = false
     loading.value = false
     let res_transactions = []
-    if (res.code && res.type == 'login') {
-      return router.replace({ name: 'Login' })
-    } else if (!res.code) {
-      for (let index = 0; index < res.data.transactions.length; index++) {
-        const transaction = res.data.transactions[index]
+    if (res.code && res.type == 'login') return router.replace({ name: 'Login' })
+    if (!res.code) {
+      for (let tx of res.data.transactions) {
         if (
-          transaction.raw_data &&
-          transaction.raw_data.contract[0].type == 'TransferContract' && //过滤其他类型
-          transaction.raw_data.contract[0].parameter.value.amount >= 1 * 10 ** 6 // 过滤小额
+          tx.raw_data &&
+          tx.raw_data.contract[0].type === 'TransferContract' &&
+          tx.raw_data.contract[0].parameter.value.amount >= 1 * 10 ** 6
         ) {
-          transaction.raw_data.contract[0].parameter.value.owner_address_trc =
-            tronWeb.address.fromHex(transaction.raw_data.contract[0].parameter.value.owner_address)
-          transaction.raw_data.contract[0].parameter.value.to_address_trc = tronWeb.address.fromHex(
-            transaction.raw_data.contract[0].parameter.value.to_address
+          tx.raw_data.contract[0].parameter.value.owner_address_trc = tronWeb.address.fromHex(
+            tx.raw_data.contract[0].parameter.value.owner_address
           )
-          res_transactions.push(transaction)
+          tx.raw_data.contract[0].parameter.value.to_address_trc = tronWeb.address.fromHex(
+            tx.raw_data.contract[0].parameter.value.to_address
+          )
+          res_transactions.push(tx)
         }
       }
-      if (page == 1) transactions.value = res_transactions
-      else transactions.value = [...transactions.value, ...res_transactions]
-      if (res.data.transactions.length == 0 || !res.data.fingerprint) {
-        finished.value = true
-      }
+      transactions.value = page === 1 ? res_transactions : [...transactions.value, ...res_transactions]
+      if (!res.data.transactions.length || !res.data.fingerprint) finished.value = true
       fingerprint = res.data.fingerprint
       page++
-    } else {
-      refreshing.value = false
-      loading.value = false
-      finished.value = false
-      showToast({
-        message: res.message,
-        position: 'bottom'
-      })
-    }
+    } else showToast({ message: res.message, position: 'bottom' })
   } catch (error) {
-    console.log(error)
-    refreshing.value = false
     loading.value = false
     finished.value = true
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    showToast({ message: error.message, position: 'bottom' })
   }
 }
 
 const viewDetail = (transaction) => {
-  if (!backButton.isMounted()) return
-  let url = ''
-  if (process.env.NODE_ENV === 'development') {
-    url = `https://nile.tronscan.org/#/transaction/${transaction.txID}`
-  } else {
-    url = `https://tronscan.org/#/transaction/${transaction.txID}`
-  }
-  openLink(url, {
-    tryBrowser: 'chrome',
-    tryInstantView: true
-  })
+  const url =
+    process.env.NODE_ENV === 'development'
+      ? `https://nile.tronscan.org/#/transaction/${transaction.txID}`
+      : `https://tronscan.org/#/transaction/${transaction.txID}`
+  window.open(url, '_blank')
 }
 
 const loadTron = async () => {
   try {
-    let res = await request('/api/wallet/tron/trx/balance', 'POST', {
-      address: wallet.value.address
-    })
-    if (res.code && res.type == 'login') {
-      return router.replace({ name: 'Login' })
-    } else if (!res.code) {
-      wallet.value.balance = utils.numFormat(res.data.balance)
-    } else {
-      showToast({
-        message: res.message,
-        position: 'bottom'
-      })
-    }
+    const res = await request('/api/wallet/tron/trx/balance', 'POST', { address: wallet.value.address })
+    if (res.code && res.type == 'login') return router.replace({ name: 'Login' })
+    if (!res.code) wallet.value.balance = utils.numFormat(res.data.balance)
+    else showToast({ message: res.message, position: 'bottom' })
   } catch (error) {
     console.log(error)
   }
 }
 </script>
-
-<style lang="scss" scoped>
-.wrapper {
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 80px);
-
-  .listWapper {
-    background-color: #fff;
-    border-radius: 5px;
-    padding: 5px 15px;
-    display: flex;
-    flex-direction: column;
-    .item {
-      display: flex;
-      width: 100%;
-      padding: 10px 0;
-      .left {
-        display: flex;
-        flex-grow: 1;
-        align-items: center;
-        .logo {
-          width: 42px;
-          height: 42px;
-        }
-        .name {
-          padding-left: 12px;
-          font-size: 18px;
-        }
-      }
-      .right {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: end;
-        .amount {
-          font-size: 24px;
-        }
-        .token {
-          font-size: 12px;
-          color: #c9c9c9;
-        }
-      }
-    }
-    .divider {
-      height: 1px;
-      background-color: #f9f9f9;
-    }
-  }
-
-  .divider {
-    height: 10px;
-    background-color: #eff2f5;
-  }
-
-  .transations {
-    flex-grow: 1;
-    background-color: #fff;
-    padding: 0px 15px;
-    border-radius: 5px;
-    overflow: scroll;
-
-    .transation {
-      display: flex;
-      padding: 10px 0;
-      .icon {
-        width: 40px;
-        height: 40px;
-        background-color: #e4e4e47f;
-        border-radius: 50%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-      .detail {
-        flex-grow: 1;
-        padding-left: 10px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        // align-items: center;
-        .direction {
-          display: flex;
-          font-size: 14px;
-          .amount {
-            padding-left: 5px;
-            font-weight: bolder;
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-          }
-          .date {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            color: #c0c0c0;
-          }
-        }
-        .address_info {
-          display: flex;
-          align-items: center;
-          font-size: 12px;
-          color: #c9c9c9;
-          .address {
-            flex-grow: 1;
-          }
-        }
-      }
-
-      .more {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding-left: 5px;
-      }
-    }
-  }
-}
-</style>
