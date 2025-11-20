@@ -9,6 +9,7 @@
       :show-stake="true"
       :timestamp="timestamp"
     />
+
     <div class="actions">
       <van-grid direction="vertical" :column-num="4">
         <van-grid-item icon="guide-o" text="发送" @click="router.push({ name: 'Send' })" />
@@ -17,6 +18,7 @@
         <van-grid-item icon="replay" text="刷新" @click="onRefresh" />
       </van-grid>
     </div>
+
     <van-row class="listWapper">
       <div class="item" @click="enterHistory('trx')">
         <div class="left">
@@ -29,7 +31,9 @@
           <div class="amount">{{ trx }}</div>
         </div>
       </div>
+
       <div class="divider" />
+
       <div class="item" @click="enterHistory('usdt')">
         <div class="left">
           <van-image :src="tether" class="logo">
@@ -54,9 +58,8 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { TronWeb } from 'tronweb'
-import { backButton } from '@telegram-apps/sdk'
 import { useRouter } from 'vue-router'
 import request from '@/common/request'
 import utils from '@/common/utils'
@@ -66,26 +69,21 @@ import tron from '@/assets/icons/tron.svg'
 import tether from '@/assets/icons/tether.svg'
 
 const router = useRouter()
+
 const wallet = ref(null)
 const trx = ref(0)
 const usdt = ref(0)
 const loading = ref(false)
 const timestamp = ref(0)
 
-const backListener = () => {
-  router.replace({ name: 'Home' })
-}
-
 onMounted(() => {
-  // 显示后退按钮
-  if (backButton.isMounted()) {
-    backButton.show()
-    backButton.onClick(backListener)
-  }
-  // 读取钱包信息
-  wallet.value = localStorage.getItem('wallet') ? JSON.parse(localStorage.getItem('wallet')) : null
+  // Загружаем кошелёк
+  wallet.value =
+    localStorage.getItem('wallet') ?
+    JSON.parse(localStorage.getItem('wallet')) :
+    null
 
-  // 读各钱包的余额
+  // Загружаем балансы TRX + USDT
   loadTron()
   loadUSDT()
 })
@@ -96,14 +94,15 @@ const onRefresh = async () => {
     forbidClick: true,
     message: '正在刷新...'
   })
+
   try {
     loading.value = true
-    timestamp.value = new Date().getTime()
+    timestamp.value = Date.now()
     await loadTron()
     await loadUSDT()
     loading.value = false
     closeToast()
-  } catch (error) {
+  } catch {
     loading.value = false
     closeToast()
   }
@@ -113,36 +112,31 @@ const enterHistory = (subtype) => {
   const tronWeb = new TronWeb({
     fullHost: 'https://api.trongrid.io'
   })
+
   wallet.value.trxAddr = tronWeb.address.toHex(wallet.value.address)
   wallet.value.subtype = subtype
-  wallet.value.balance = subtype == 'trx' ? trx.value : usdt.value
+  wallet.value.balance = subtype === 'trx' ? trx.value : usdt.value
+
   localStorage.setItem('wallet', JSON.stringify(wallet.value))
-  switch (subtype) {
-    case 'trx':
-      router.push({ name: 'TRX' })
-      break
-    case 'usdt':
-      router.push({ name: 'USDT' })
-      break
-    default:
-      break
+
+  if (subtype === 'trx') {
+    router.push({ name: 'TRX' })
+  } else {
+    router.push({ name: 'USDT' })
   }
 }
 
-onUnmounted(() => {
-  if (backButton.isMounted()) {
-    backButton.offClick(backListener)
-  }
-})
-
 const loadTron = async () => {
   try {
-    let res = await request('/api/wallet/tron/trx/balance', 'POST', {
+    const res = await request('/api/wallet/tron/trx/balance', 'POST', {
       address: wallet.value.address
     })
-    if (res.code && res.type == 'login') {
+
+    if (res.code && res.type === 'login') {
       return router.replace({ name: 'Login' })
-    } else if (!res.code) {
+    }
+
+    if (!res.code) {
       trx.value = utils.numFormat(res.data.balance)
     } else {
       showToast({
@@ -150,19 +144,22 @@ const loadTron = async () => {
         position: 'bottom'
       })
     }
-  } catch (error) {
-    console.log(error)
+  } catch (e) {
+    console.log(e)
   }
 }
 
 const loadUSDT = async () => {
   try {
-    let res = await request('/api/wallet/tron/usdt/balance', 'POST', {
+    const res = await request('/api/wallet/tron/usdt/balance', 'POST', {
       address: wallet.value.address
     })
-    if (res.code && res.type == 'login') {
+
+    if (res.code && res.type === 'login') {
       return router.replace({ name: 'Login' })
-    } else if (!res.code) {
+    }
+
+    if (!res.code) {
       usdt.value = utils.numFormat(res.data.balance)
     } else {
       showToast({
@@ -170,8 +167,8 @@ const loadUSDT = async () => {
         position: 'bottom'
       })
     }
-  } catch (error) {
-    console.log(error)
+  } catch (e) {
+    console.log(e)
   }
 }
 
@@ -180,11 +177,12 @@ const swapActions = [
   { name: 'TRX转USDT', val: 'trx2usdt' },
   { name: 'USDT转TRX', val: 'usdt2trx' }
 ]
+
 const onSwapAction = (action) => {
-  if (action.val == 'usdt2trx') {
-    return router.push({ name: 'USDT2TRX' })
-  } else if (action.val == 'trx2usdt') {
-    return router.push({ name: 'TRX2USDT' })
+  if (action.val === 'usdt2trx') {
+    router.push({ name: 'USDT2TRX' })
+  } else if (action.val === 'trx2usdt') {
+    router.push({ name: 'TRX2USDT' })
   }
 }
 </script>
@@ -192,6 +190,7 @@ const onSwapAction = (action) => {
 <style lang="scss" scoped>
 .wrapper {
   padding: 10px 10px;
+
   .actions {
     padding-bottom: 10px;
     :deep(.van-grid-item__content) {
@@ -206,37 +205,45 @@ const onSwapAction = (action) => {
   padding: 5px 15px;
   display: flex;
   flex-direction: column;
+
   .item {
     display: flex;
     width: 100%;
     padding: 10px 0;
+
     .left {
       display: flex;
       flex-grow: 1;
       align-items: center;
+
       .logo {
         width: 42px;
         height: 42px;
       }
+
       .name {
         padding-left: 12px;
         font-size: 18px;
       }
     }
+
     .right {
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: end;
+
       .amount {
         font-size: 24px;
       }
+
       .token {
         font-size: 12px;
         color: #c9c9c9;
       }
     }
   }
+
   .divider {
     height: 1px;
     background-color: #f9f9f9;
