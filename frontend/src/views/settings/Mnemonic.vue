@@ -30,10 +30,9 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '@/common/request'
-import { backButton } from '@telegram-apps/sdk'
 import { showToast } from 'vant'
 
 const verified = ref(false)
@@ -44,26 +43,6 @@ const loading = ref(false)
 const info = ref('')
 const router = useRouter()
 const mnemonic = ref([])
-
-const backListener = () => {
-  router.back()
-}
-
-onMounted(() => {
-  if (backButton.isMounted()) {
-    backButton.onClick(backListener)
-  }
-})
-
-onUnmounted(async () => {
-  try {
-    if (backButton.isMounted()) {
-      backButton.offClick(backListener)
-    }
-  } catch (error) {
-    console.log(error)
-  }
-})
 
 watch(password, (newVal) => {
   if (newVal != '') errorInfo.value = ''
