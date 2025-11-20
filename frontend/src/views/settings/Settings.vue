@@ -1,17 +1,24 @@
 <template>
   <div class="wrapper">
     <van-cell-group title="安全设置">
-      <van-cell title="指纹/面容登录" label="登录时验证本机指纹或面容" v-if="showBiometric">
+      <van-cell
+        v-if="showBiometric"
+        title="指纹/面容登录"
+        label="登录时验证本机指纹或面容"
+      >
         <template #right-icon>
           <van-switch v-model="enableBio" :loading="loading" @change="onBiometric" />
         </template>
       </van-cell>
+
       <van-cell title="支付密码" label="付款时验证支付密码" is-link @click="onSetPassword" />
+
       <van-cell title="双因素验证支付" label="付款时验证Google或微软验证器生成的动态密码">
         <template #right-icon>
           <van-switch v-model="enable2fa" :loading="loading2fa" @change="on2FA" />
         </template>
       </van-cell>
+
       <!-- <van-cell
         title="导出助记词"
         label="用于恢复或迁移钱包, 丢失将导致资产损失"
@@ -34,7 +41,7 @@
         <template #title>
           <span class="custom-title">
             <span style="font-weight: bold">妙蛙钱包</span>
-            是一款Telegram小程序。它由知名Web3团队打造，帮助您更加安全、方便地管理加密资产。
+            是一款独立加密钱包小程序。它由知名Web3团队打造，帮助您更加安全、方便地管理加密资产。
           </span>
         </template>
       </van-cell>
@@ -82,10 +89,9 @@
 </template>
 
 <script setup>
-import { showToast } from 'vant'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { biometry, backButton } from '@telegram-apps/sdk'
+import { showToast } from 'vant'
 import Password from '@/components/wallet/Password.vue'
 import request from '@/common/request'
 
@@ -109,73 +115,24 @@ const showReset = ref(false)
 const resetActions = [{ name: '用"新的助记词"重建钱包', val: 'reset', color: '#ee0a24' }]
 let passwordAction = null
 
-const backListener = () => {
-  router.back()
-}
-
-const cancelPassword = () => {
-  showPassword.value = false
-  if (loading.value) {
-    loading.value = false
-    enableBio.value = !enableBio.value
-  }
-}
-
-const cancel2FACode = () => {
-  loading2fa.value = show2FACode.value = false
-  enable2fa.value = !enable2fa.value
-}
-
 function isMobileOS() {
-  const userAgent = navigator.userAgent
-  // 判断是否为 Android 系统
-  if (/Android/i.test(userAgent)) {
-    return true
-  }
-  // 判断是否为 iOS 系统
-  if (/iPhone|iPad|iPod/i.test(userAgent)) {
-    return true
-  }
-  return false
+  const ua = navigator.userAgent
+  return /Android|iPhone|iPad|iPod/i.test(ua)
 }
 
-onMounted(async () => {
-  try {
-    enable2fa.value = localStorage.getItem('enable2fa')
-      ? localStorage.getItem('enable2fa') == 'true'
-      : false
-    hasPassword.value = localStorage.getItem('hasPassword')
-      ? localStorage.getItem('hasPassword') == 'true'
-      : false
-    localToken.value = localStorage.getItem('token') ? localStorage.getItem('token') : null
-    user.value = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null
-    if (user.value && user.value.id) {
-      enableBio.value = localStorage.getItem(`${user.value.id}:biometric`)
-        ? localStorage.getItem(`${user.value.id}:biometric`) == 'true'
-        : false
-    }
-    showBiometric.value = isMobileOS()
-    if (backButton.isMounted()) {
-      backButton.onClick(backListener)
-      backButton.show()
-      await biometry.mount()
-    }
-  } catch (error) {
-    console.log(error)
+onMounted(() => {
+  enable2fa.value = localStorage.getItem('enable2fa') === 'true'
+  hasPassword.value = localStorage.getItem('hasPassword') === 'true'
+  localToken.value = localStorage.getItem('token')
+  user.value = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null
+  if (user.value && user.value.id) {
+    enableBio.value = localStorage.getItem(`${user.value.id}:biometric`) === 'true'
   }
+  showBiometric.value = isMobileOS()
 })
 
-onUnmounted(async () => {
-  try {
-    if (backButton.isMounted()) {
-      backButton.offClick(backListener)
-    }
-    if (biometry.isMounted()) biometry.unmount()
-  } catch (error) {
-    console.log(error)
-  }
-})
-
+// ---------------------------------
+// Пароль
 const onSetPassword = () => {
   if (loading.value) return
   if (!hasPassword.value) {
@@ -191,6 +148,8 @@ const onPwAction = (action) => {
   router.push({ name: 'Password' })
 }
 
+// ---------------------------------
+// Сброс кошелька
 const showResetDlg = () => {
   if (!hasPassword.value) {
     return showToast({
@@ -202,244 +161,105 @@ const showResetDlg = () => {
 }
 
 const onResetAction = (action) => {
-  if (action.val == 'reset') {
+  if (action.val === 'reset') {
     passwordAction = 'reset'
     showPassword.value = true
   }
 }
 
-/*
-const onMnemonic = () => {
+// ---------------------------------
+// Биометрия (локальный switch)
+const onBiometric = () => {
   if (!hasPassword.value) {
+    enableBio.value = false
     return showToast({
       message: '请先设置支付密码',
       position: 'bottom'
     })
   }
-  router.push({ name: 'Mnemonic' })
+  localStorage.setItem(`${user.value?.id || 'default'}:biometric`, enableBio.value)
+  showToast({
+    message: enableBio.value ? '生物识别已开启' : '生物识别已关闭',
+    position: 'bottom'
+  })
 }
-*/
 
+// ---------------------------------
+// 2FA
 const on2FA = async () => {
   try {
     loading2fa.value = true
-    if (enable2fa.value == true) {
-      // 开启2FA
+    if (enable2fa.value) {
       let res = await request('/api/user/get_2fa', 'POST', {})
       loading2fa.value = false
-      if (res.code && res.type == 'login') {
+      if (res.code && res.type === 'login') {
         return router.replace({ name: 'Login' })
       } else if (!res.code) {
-        // 跳转到绑定页面
         localStorage.setItem('otpauthUrl', res.data.otpauthUrl)
         router.push({ name: 'Enable2FA' })
-        return
       } else {
-        if (res.type == '2fa_bind') {
-          // 已经开启过了
-          return
+        if (res.type !== '2fa_bind') {
+          showToast({ message: res.message, position: 'bottom' })
+          enable2fa.value = !enable2fa.value
         }
-        showToast({
-          message: res.message,
-          position: 'bottom'
-        })
-        enable2fa.value = !enable2fa.value
       }
     } else {
-      // 关闭2FA
       show2FACode.value = true
     }
   } catch (error) {
-    console.log(error)
-    enable2fa.value = !enable2fa.value
     loading2fa.value = false
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    enable2fa.value = !enable2fa.value
+    showToast({ message: error.message, position: 'bottom' })
   }
 }
 
 const onUnBind = async (code) => {
   try {
     show2FACode.value = false
-    let res = await request('/api/user/disable_2fa', 'POST', {
-      code
-    })
+    let res = await request('/api/user/disable_2fa', 'POST', { code })
     loading2fa.value = false
-    if (res.code && res.type == 'login') {
-      loading.value = false
+    if (res.code && res.type === 'login') {
       return router.replace({ name: 'Login' })
     } else if (!res.code) {
-      loading.value = false
-      showToast({
-        message: '成功关闭双因素验证',
-        position: 'bottom'
-      })
+      showToast({ message: '成功关闭双因素验证', position: 'bottom' })
       localStorage.setItem('enable2fa', false)
       enable2fa.value = false
     } else {
       enable2fa.value = !enable2fa.value
-      if (res.type == '2fa_secret') {
-        showToast({
-          message: '验证码错误输入错误',
-          position: 'bottom'
-        })
-        return
-      }
-      showToast({
-        message: res.message,
-        position: 'bottom'
-      })
+      showToast({ message: res.message, position: 'bottom' })
     }
-    loading.value = false
   } catch (error) {
-    loading.value = false
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    loading2fa.value = false
+    showToast({ message: error.message, position: 'bottom' })
   }
 }
 
-const onBiometric = async () => {
-  try {
-    loading.value = true
-    if (!localToken.value || !user.value) {
-      loading.value = false
-      return showToast({
-        message: '登录信息异常',
-        position: 'bottom'
-      })
-    }
-    if (!hasPassword.value) {
-      loading.value = false
-      enableBio.value = false
-      return showToast({
-        message: '请先设置支付密码',
-        position: 'bottom'
-      })
-    }
-    if (!biometry.isSupported()) {
-      loading.value = false
-      showToast({
-        message: '当前设备没有生物识别功能',
-        position: 'bottom'
-      })
-      enableBio.value = false
-      return
-    }
-    if (enableBio.value) {
-      // 开启生物识别
-      if (!(await biometry.requestAccess())) {
-        // 没有权限
-        loading.value = false
-        enableBio.value = false
-        biometry.openSettings()
-        return
-      }
-      passwordAction = 'bio'
-      showPassword.value = true
-    } else {
-      // 关闭生物识别
-      passwordAction = 'bio'
-      showPassword.value = true
-    }
-  } catch (error) {
-    console.log(error)
-    enableBio.value = false
-    loading.value = false
-    showToast({
-      message: '当前设备不支持生物识别功能',
-      position: 'bottom'
-    })
-  }
+// ---------------------------------
+// Обработка пароля (биометрия больше не использует Telegram)
+const cancelPassword = () => {
+  showPassword.value = false
+  if (loading.value) loading.value = false
+}
+
+const cancel2FACode = () => {
+  show2FACode.value = false
+  if (loading2fa.value) loading2fa.value = false
 }
 
 const onPassword = async (password) => {
   try {
     showPassword.value = false
-    if (passwordAction == 'bio') {
-      let res = await request('/api/user/verify', 'POST', {
-        password: password
-      })
-      if (res.code && res.type == 'login') {
-        loading.value = false
-        return router.replace({ name: 'Login' })
-      } else if (!res.code) {
-        if (!res.data.verified) {
-          enableBio.value = !enableBio.value
-          showToast({
-            message: '密码错误',
-            position: 'bottom'
-          })
-          loading.value = false
-          return
-        }
-        // 取回全部用户的token
-        const { status, token } = await biometry.authenticate({
-          reason: '开启指纹/面容支付'
-        })
-        if (status !== 'authorized') {
-          // 取回失败
-          loading.value = false
-          enableBio.value = !enableBio.value
-          return
-        }
-        let userTokens = {}
-        if (token && token.length) {
-          userTokens = JSON.parse(token)
-        }
-        if (enableBio.value) {
-          userTokens[user.value.id] = { token: localToken.value }
-          let tokenTxt = JSON.stringify(userTokens)
-          await biometry.updateToken({
-            reason: '开启指纹/面容支付',
-            token: tokenTxt
-          })
-          localStorage.setItem(`${user.value.id}:biometric`, true)
-        } else {
-          delete userTokens[user.value.id]
-          let tokenTxt = JSON.stringify(userTokens)
-          await biometry.updateToken({
-            reason: '关闭指纹/面容支付',
-            token: tokenTxt
-          })
-          localStorage.setItem(`${user.value.id}:biometric`, false)
-        }
-      } else {
-        enableBio.value = !enableBio.value
-        showToast({
-          message: res.message,
-          position: 'bottom'
-        })
-      }
+    loading.value = true
+    if (passwordAction === 'reset') {
+      let res = await request('/api/wallet/reset', 'POST', { password })
       loading.value = false
-    } else if (passwordAction == 'reset') {
-      let res = await request('/api/wallet/reset', 'POST', {
-        password: password
-      })
-      if (res.code && res.type == 'login') {
-        loading.value = false
-        return router.replace({ name: 'Login' })
-      } else if (!res.code) {
-        loading.value = false
-        return router.replace({ name: 'Login' })
-      } else {
-        showToast({
-          message: res.message,
-          position: 'bottom'
-        })
-      }
-      loading.value = false
+      if (res.code && res.type === 'login') return router.replace({ name: 'Login' })
+      if (!res.code) return router.replace({ name: 'Login' })
+      showToast({ message: res.message, position: 'bottom' })
     }
   } catch (error) {
     loading.value = false
-    if (passwordAction == 'bio') enableBio.value = !enableBio.value
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    showToast({ message: error.message, position: 'bottom' })
   }
 }
 </script>
