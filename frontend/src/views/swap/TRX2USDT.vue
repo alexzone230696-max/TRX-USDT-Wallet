@@ -14,6 +14,7 @@
         </div>
       </div>
     </van-row>
+
     <van-form @submit="onSwap">
       <van-field
         v-model="swapAmount"
@@ -22,12 +23,13 @@
         name="数量"
         label="数量"
         placeholder="请输入要兑换的TRX数量"
-        :rules="[{ required: true, message: '请输入要兑换的USDT数量' }]"
+        :rules="[{ required: true, message: '请输入要兑换的TRX数量' }]"
       >
         <template #button>
           <span @click="swapAmount = realTrxBalance">全部</span>
         </template>
       </van-field>
+
       <van-notice-bar color="#1989fa" background="#ecf9ff" v-if="swap_etimated">
         大概需要消耗 {{ swap_fee }} 个TRX, 获得 {{ tokenGot }} 个USDT
       </van-notice-bar>
@@ -66,12 +68,11 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import request from '@/common/request'
 import utils from '@/common/utils'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
-import { backButton } from '@telegram-apps/sdk'
 import Password from '@/components/wallet/Password.vue'
 import tron from '@/assets/icons/tron.svg'
 
@@ -89,71 +90,36 @@ const swapAmount = ref(null)
 const swap_fee = ref(0)
 const tokenGot = ref(0)
 
-const backListener = () => {
-  router.back()
-}
-
 onMounted(() => {
-  // 显示后退按钮
-  if (backButton.isMounted()) {
-    backButton.show()
-    backButton.onClick(backListener)
-  }
-
-  // 读取钱包信息
   wallet.value = localStorage.getItem('wallet') ? JSON.parse(localStorage.getItem('wallet')) : null
   loadTron()
 })
 
-onUnmounted(() => {
-  if (backButton.isMounted()) {
-    backButton.offClick(backListener)
-  }
-})
-
 const loadTron = async () => {
   try {
-    let res = await request('/api/wallet/tron/trx/balance', 'POST', {
-      address: wallet.value.address
-    })
-    if (res.code && res.type == 'login') {
-      return router.replace({ name: 'Login' })
-    } else if (!res.code) {
-      trxBalance.value = utils.numFormat(res.data.balance)
-      realTrxBalance.value = parseFloat(res.data.balance)
-    } else {
-      showToast({
-        message: res.message,
-        position: 'bottom'
-      })
-    }
+    const res = await request('/api/wallet/tron/trx/balance', 'POST', { address: wallet.value.address })
+    if (res.code && res.type == 'login') return router.replace({ name: 'Login' })
+    trxBalance.value = utils.numFormat(res.data.balance)
+    realTrxBalance.value = parseFloat(res.data.balance)
   } catch (error) {
     console.log(error)
   }
 }
 
 const getSecurity = async () => {
-  let res = await request(`/api/user/get_security`, 'POST')
-  if (res.code && res.type == 'login') {
-    return router.replace({ name: 'Login' })
-  } else if (!res.code) {
-    return res.data
-  } else {
-    throw new Error(res.message)
-  }
+  const res = await request('/api/user/get_security', 'POST')
+  if (res.code && res.type == 'login') return router.replace({ name: 'Login' })
+  if (!res.code) return res.data
+  throw new Error(res.message)
 }
 
-// 返回false则停止操作
 const checkSecurity = async () => {
   try {
     const security = await getSecurity()
     const hasPassword = security.password
     const enable2fa = security.secret
 
-    if (!hasPassword && !enable2fa) {
-      // 没有开启任何安全措施则直接转账
-      return true
-    }
+    if (!hasPassword && !enable2fa) return true
     if (hasPassword && !password.value) {
       showPassword.value = true
       return false
@@ -167,10 +133,7 @@ const checkSecurity = async () => {
     loading.value = false
     show2FACode.value = false
     showPassword.value = false
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    showToast({ message: error.message, position: 'bottom' })
     return false
   }
 }
@@ -178,41 +141,31 @@ const checkSecurity = async () => {
 const estimateSwap = async () => {
   try {
     loading.value = true
-    let res = await request('/api/wallet/tron/swap/trx2usdt/estimate', 'POST', {
+    const res = await request('/api/wallet/tron/swap/trx2usdt/estimate', 'POST', {
       address: wallet.value.address,
       amount: swapAmount.value
     })
     loading.value = false
-    if (res.code && res.type == 'login') {
-      return router.replace({ name: 'Login' })
-    } else if (!res.code) {
-      swap_etimated.value = true
-      swap_fee.value = parseFloat(res.data.cost).toFixed(2)
-      tokenGot.value = parseFloat(res.data.amount).toFixed(2)
-    } else {
-      showToast({
-        message: res.message,
-        position: 'bottom'
-      })
-    }
+    if (res.code && res.type == 'login') return router.replace({ name: 'Login' })
+    swap_etimated.value = true
+    swap_fee.value = parseFloat(res.data.cost).toFixed(2)
+    tokenGot.value = parseFloat(res.data.amount).toFixed(2)
   } catch (error) {
     console.log(error)
     loading.value = false
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    showToast({ message: error.message, position: 'bottom' })
   }
 }
 
 const swap = async () => {
+  if (!(await checkSecurity())) return
+  loading.value = true
   try {
-    if (!(await checkSecurity())) return
-    loading.value = true
     let realAmount = parseFloat(swapAmount.value)
     if (realAmount + parseFloat(swap_fee.value) > realTrxBalance.value)
       realAmount -= realAmount + parseFloat(swap_fee.value) - realTrxBalance.value
-    let res = await request('/api/wallet/tron/swap/trx2usdt', 'POST', {
+
+    const res = await request('/api/wallet/tron/swap/trx2usdt', 'POST', {
       address: wallet.value.address,
       amount: realAmount,
       password: password.value,
@@ -222,22 +175,11 @@ const swap = async () => {
     code2fa.value = null
     loading.value = false
     showPassword.value = false
-    if (res.code && res.type == 'login') {
-      return router.replace({ name: 'Login' })
-    } else if (!res.code) {
-      swap_etimated.value = false
-      router.back()
-      showToast({
-        message: '兑换成功, 请稍后刷新',
-        duration: 5 * 1000,
-        position: 'bottom'
-      })
-    } else {
-      showToast({
-        message: res.message,
-        position: 'bottom'
-      })
-    }
+
+    if (res.code && res.type == 'login') return router.replace({ name: 'Login' })
+    swap_etimated.value = false
+    router.back()
+    showToast({ message: '兑换成功, 请稍后刷新', duration: 5000, position: 'bottom' })
   } catch (error) {
     console.log(error)
     password.value = null
@@ -245,31 +187,16 @@ const swap = async () => {
     loading.value = false
     showPassword.value = false
     swap_etimated.value = false
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+    showToast({ message: error.message, position: 'bottom' })
   }
 }
 
 const onSwap = async () => {
-  try {
-    if (!swap_etimated.value) return await estimateSwap()
-    if (realTrxBalance.value < swap_fee.value) {
-      return showToast({
-        message: 'Gas不足, 请先充一些TRX',
-        position: 'bottom'
-      })
-    }
-    swap()
-  } catch (error) {
-    console.log(error)
-    loading.value = false
-    showToast({
-      message: error.message,
-      position: 'bottom'
-    })
+  if (!swap_etimated.value) return estimateSwap()
+  if (realTrxBalance.value < swap_fee.value) {
+    return showToast({ message: 'Gas不足, 请先充一些TRX', position: 'bottom' })
   }
+  swap()
 }
 
 const onPassword = async (passcode) => {
@@ -298,70 +225,19 @@ const cancel2FACode = () => {
   show2FACode.value = false
 }
 
-watch(swapAmount, async () => {
+watch(swapAmount, () => {
   swap_etimated.value = false
 })
 </script>
 
 <style lang="scss" scoped>
-.notify {
-  width: 100%;
-  display: flex;
-  .notify_left {
-    flex-grow: 1;
-  }
-}
-
-.wrapper {
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 80px);
-  .listWapper {
-    background-color: #fff;
-    border-radius: 5px;
-    padding: 5px 15px;
-    display: flex;
-    flex-direction: column;
-    .item {
-      display: flex;
-      width: 100%;
-      padding: 10px 0;
-      .left {
-        display: flex;
-        flex-grow: 1;
-        align-items: center;
-        .logo {
-          width: 42px;
-          height: 42px;
-        }
-        .name {
-          padding-left: 12px;
-          font-size: 18px;
-        }
-      }
-      .right {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: end;
-        .amount {
-          font-size: 24px;
-        }
-        .token {
-          font-size: 12px;
-          color: #c9c9c9;
-        }
-      }
-    }
-    .divider {
-      height: 1px;
-      background-color: #f9f9f9;
-    }
-  }
-}
-
-:deep(.van-notice-bar__content) {
-  width: 100%;
-}
+.wrapper { padding: 10px; display: flex; flex-direction: column; height: calc(100vh - 80px); }
+.listWapper { background-color: #fff; border-radius: 5px; padding: 5px 15px; display: flex; flex-direction: column; }
+.item { display: flex; width: 100%; padding: 10px 0; }
+.left { display: flex; flex-grow: 1; align-items: center; }
+.logo { width: 42px; height: 42px; }
+.name { padding-left: 12px; font-size: 18px; }
+.right { display: flex; flex-direction: column; justify-content: center; align-items: end; }
+.amount { font-size: 24px; }
+.token { font-size: 12px; color: #c9c9c9; }
 </style>
